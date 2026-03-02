@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="kaa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protected Quiz System</title>
+    <style>
+        /* Fokus joǵalsa yamasa qáwipli jaǵdayda ekran qarayıp qalıwı ushın */
+        #security-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); color: white; z-index: 10000; justify-content: center; align-items: center; text-align: center; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; user-select: none; }
+        .quiz-card { background: #fff; width: 450px; border-radius: 12px; padding: 30px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); position: relative; }
+        .timer-bar { height: 5px; background: #e0e0e0; width: 100%; margin-bottom: 20px; border-radius: 5px; overflow: hidden; }
+        #timer-progress { height: 100%; background: #3498db; width: 100%; transition: 1s linear; }
+        ul { list-style: none; padding: 0; }
+        li { background: #f8f9fa; border: 1px solid #ddd; padding: 12px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        li:hover { background: #eef2f7; }
+        .correct { background: #2ecc71 !important; color: white; }
+        .wrong { background: #e74c3c !important; color: white; }
+        .btn { width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="security-overlay">
+        <h1>QÁWIPSIZLIK QÁTESI!</h1>
+        <p>Developer Tools yamasa basqa terepke ótiw anıqlandı. Test toqtatıldı.</p>
+    </div>
+
+    <div class="quiz-card" id="main-ui">
+        <div id="start-box">
+            <h2>Veb-Dasturlaw Testi</h2>
+            <p>F.I.SH jazıń (10 soraw, 6 ballıq sistema):</p>
+            <input type="text" id="username" placeholder="F.I.SH...">
+            <button class="btn" onclick="startQuiz()">Testti baslaw</button>
+            <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">⚠️ Oń túyme, nusqalaw hám vkladka almastırıw bloklanǵan.</p>
+        </div>
+
+        <div id="quiz-box" style="display: none;">
+            <div class="timer-bar"><div id="timer-progress"></div></div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px; color: #666;">
+                <span id="q-count">1/10</span>
+                <span id="timer-text">15s</span>
+            </div>
+            <h3 id="question">Soraw júklenbekte...</h3>
+            <ul id="options"></ul>
+        </div>
+
+        <div id="result-box" style="display: none;">
+            <h2>Nátije</h2>
+            <p id="res-name"></p>
+            <h1 id="res-ball" style="color: #27ae60;">0.0</h1>
+            <p id="res-stats"></p>
+            <p style="font-size: 11px; color: #999;">Maǵlıwmat saqlandı. Qaytadan tapsırıw múmkin emes.</p>
+        </div>
+    </div>
+
+    <script>
+        // 30 ta savol bazasi (ok mánisleri Base64-te: a="YQ==", b="Yg==", c="Yw==", d="ZA==")
+        const db = [
+            {q: "HTML skeleti qaysı tegten baslanadı?", a: "html", b: "body", c: "head", d: "p", ok: "YQ=="},
+            {q: "CSS-de tekst túsiniń ózgertiw?", a: "font", b: "color", c: "text", d: "bg", ok: "Yg=="},
+            {q: "JS-de turaqlı ózgeriwshi?", a: "let", b: "var", c: "const", d: "set", ok: "Yw=="},
+            {q: "HTML-de súwret tegi?", a: "img", b: "src", c: "a", d: "li", ok: "YQ=="},
+            {q: "CSS-de ID belgisi?", a: ".", b: "!", c: "@", d: "#", ok: "ZA=="},
+            {q: "Jańa qatar tegi?", a: "hr", b: "br", c: "lb", d: "p", ok: "Yg=="},
+            {q: "JS-de 'alert' ne isleydi?", a: "Xabar", b: "Sanaw", c: "O'shiriw", d: "Jazıw", ok: "YQ=="},
+            {q: "JS-de pútin sanǵa aylandırıw?", a: "toInt", b: "parseInt", c: "Number", d: "Get", ok: "Yg=="},
+            {q: "CSS-de sırtqı aralıq?", a: "margin", b: "padding", c: "gap", d: "border", ok: "YQ=="},
+            {q: "JS-de massiv jaqshası?", a: "{}", b: "()", c: "[]", d: "<>", ok: "Yw=="}
+            // ... (qolǵan 20 sorawdı da usı formatta qosıw múmkin)
+        ];
+
+        let questions = [], index = 0, score = 0, timer, timeLeft = 15, uName = "";
+
+        // --- QORǴAW MANTIQI ---
+        // 1. Oń túyme hám klaviatura bloklaw
+        document.onkeydown = (e) => {
+            if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 73) || (e.ctrlKey && e.keyCode == 85)) {
+                showSecurityBreach();
+                return false;
+            }
+        };
+
+        // 2. Developer Tools anıqlaw (Debugger tuzog'i)
+        setInterval(() => {
+            const startTime = performance.now();
+            debugger;
+            if (performance.now() - startTime > 100) {
+                showSecurityBreach();
+            }
+        }, 1000);
+
+        function showSecurityBreach() {
+            document.getElementById('main-ui').style.display = 'none';
+            document.getElementById('security-overlay').style.display = 'flex';
+            clearInterval(timer);
+        }
+
+        // 3. Basqa vkladkaǵa ótse
+        window.onblur = () => { if(uName) alert("ESKERTIW: Testten shıǵıw qatań qadaǵalanadı!"); };
+
+        // --- TEST MANTIQI ---
+        window.onload = () => {
+            const saved = localStorage.getItem('_secure_quiz_v2');
+            if(saved) showFinal(JSON.parse(saved));
+        };
+
+        function startQuiz() {
+            uName = document.getElementById('username').value.trim();
+            if(!uName) return alert("F.I.SH jazıń!");
+            questions = db.sort(() => 0.5 - Math.random()).slice(0, 10);
+            document.getElementById('start-box').style.display = 'none';
+            document.getElementById('quiz-box').style.display = 'block';
+            loadQ();
+        }
+
+        function loadQ() {
+            clearInterval(timer);
+            timeLeft = 15;
+            updateTimerUI();
+            
+            let current = questions[index];
+            document.getElementById('question').innerText = current.q;
+            document.getElementById('q-count').innerText = `Soraw: ${index+1}/10`;
+            
+            let opts = [{k:'a',v:current.a}, {k:'b',v:current.b}, {k:'c',v:current.c}, {k:'d',v:current.d}].sort(() => 0.5 - Math.random());
+            let html = "";
+            opts.forEach(o => { html += `<li onclick="check('${o.k}', this)">${o.v}</li>`; });
+            document.getElementById('options').innerHTML = html;
+
+            timer = setInterval(() => {
+                timeLeft--;
+                updateTimerUI();
+                if(timeLeft <= 0) next();
+            }, 1000);
+        }
+
+        function updateTimerUI() {
+            document.getElementById('timer-text').innerText = timeLeft + 's';
+            document.getElementById('timer-progress').style.width = (timeLeft/15)*100 + '%';
+        }
+
+        function check(ans, el) {
+            clearInterval(timer);
+            const correct = atob(questions[index].ok); // Base64 dekodlaw
+            if(ans === correct) { score++; el.classList.add('correct'); }
+            else { el.classList.add('wrong'); }
+            setTimeout(next, 600);
+        }
+
+        function next() {
+            index++;
+            if(index < 10) loadQ();
+            else finish();
+        }
+
+        function finish() {
+            const ball = ((score / 10) * 6).toFixed(1);
+            const res = {n: uName, s: score, b: ball};
+            localStorage.setItem('_secure_quiz_v2', JSON.stringify(res));
+            showFinal(res);
+        }
+
+        function showFinal(res) {
+            document.getElementById('start-box').style.display = 'none';
+            document.getElementById('quiz-box').style.display = 'none';
+            document.getElementById('result-box').style.display = 'block';
+            document.getElementById('res-name').innerText = res.n;
+            document.getElementById('res-ball').innerText = res.b + " ball";
+            document.getElementById('res-stats').innerText = `Durıs juwap: ${res.s} / 10`;
+        }
+    </script>
+</body>
+</html>
